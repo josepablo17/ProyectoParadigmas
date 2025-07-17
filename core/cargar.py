@@ -1,31 +1,21 @@
-import pandas as pd
-import os
+# core/cargar.py
 
-def CargarDatos(ruta_archivo: str) -> pd.DataFrame:
+import pandas as pd
+from io import BytesIO, StringIO
+
+def cargar_datos(uploaded_file):
     """
-    Carga un archivo de datos en formato CSV o Excel y lo convierte en un DataFrame de Pandas.
+    Carga un archivo subido desde Streamlit (UploadedFile) en formato CSV o Excel.
 
     Parámetros:
-    - ruta_archivo: ruta del archivo a cargar (debe terminar en .csv, .xlsx o .xls)
+    - uploaded_file: archivo subido desde st.file_uploader
 
     Retorna:
     - Un DataFrame con los datos cargados.
-
-    Lanza:
-    - FileNotFoundError si el archivo no existe.
-    - ValueError si el formato del archivo no es soportado.
     """
-    
-    # Validar existencia del archivo
-    if not os.path.exists(ruta_archivo):
-        raise FileNotFoundError(f"El archivo no existe: {ruta_archivo}")
-
-    # Cargar archivo según su extensión
-    if ruta_archivo.endswith('.csv'):
-        df = pd.read_csv(ruta_archivo)
-    elif ruta_archivo.endswith('.xlsx') or ruta_archivo.endswith('.xls'):
-        df = pd.read_excel(ruta_archivo)
+    if uploaded_file.name.endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith((".xls", ".xlsx")):
+        return pd.read_excel(BytesIO(uploaded_file.read()))
     else:
         raise ValueError("⚠️ Formato de archivo no soportado. Usa .csv o .xlsx")
-
-    return df

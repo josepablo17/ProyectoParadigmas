@@ -1,69 +1,65 @@
 import streamlit as st
-import pandas as pd
 
-from core.cargar import CargarDatos
-from core.analizar import (
-    obtener_estadisticas_descriptivas,
-    obtener_tipos_variables,
-    obtener_matriz_correlacion
-)
-from core.deteccion_atipicos import DeteccionAtipicos
-from core.agrupamiento import Agrupamiento
-from core.resumen import GeneradorResumen
-from core.visualizacion import CrearGraficos
-from core.exportar import ExportadorPDF
+from core.cargar import cargar_datos
+from core.analisis_completo import ejecutar_analisis_completo
+from core.dashboard import mostrar_dashboard
+from core.procesamiento import preparar_datos
 
+# Configuración inicial de la página
 st.set_page_config(page_title="Análisis Inteligente de Datos", layout="wide")
-st.title("🧠 Sistema de Análisis Automatizado de Datos")
 
-archivo = st.file_uploader("📁 Carga un archivo CSV o Excel", type=["csv", "xlsx"])
+# Título y descripción
+st.title("Sistema de Análisis Automatizado de Datos")
+st.markdown("""
+Bienvenido al sistema de análisis inteligente de datos. Aquí podrás:
 
+- Cargar tus archivos en formato CSV o Excel
+- Limpiar y preparar automáticamente tus datos
+- Visualizar estadísticas, correlaciones y agrupamientos
+- Generar reportes PDF detallados del análisis
+
+Sube tu archivo para comenzar 
+""")
+
+# Subida de archivo
+archivo = st.file_uploader("Carga un archivo CSV o Excel", type=["csv", "xlsx"])
+st.divider()
+
+# Procesamiento principal
 if archivo:
     try:
-        df = pd.read_csv(archivo) if archivo.name.endswith("csv") else pd.read_excel(archivo)
-        st.success("✅ Archivo cargado correctamente.")
-        st.dataframe(df.head())
+        # Cargar datos
+        df = cargar_datos(archivo)
+        st.success("Archivo cargado correctamente.")
 
-        if st.button("🚀 Ejecutar análisis completo"):
-            tipos = obtener_tipos_variables(df)
-            st.subheader("📌 Tipos de variables")
-            st.json(tipos)
+        # Mostrar vista previa dentro de un contenedor expandible
+        with st.expander("Vista previa del archivo cargado"):
+            st.dataframe(df.head())
 
-            st.subheader("📊 Estadísticas descriptivas")
-            st.dataframe(obtener_estadisticas_descriptivas(df))
+        # Limpieza de datos con animación de carga
+        with st.spinner("Limpiando y preparando datos..."):
+            df, resumen_limpieza = preparar_datos(df)
 
-            st.subheader("📈 Matriz de correlación")
-            correlaciones = obtener_matriz_correlacion(df)
-            st.dataframe(correlaciones)
+        st.info("Datos limpiados automáticamente.")
 
-            zscore = DeteccionAtipicos.por_zscore(df)
-            iqr = DeteccionAtipicos.por_rango_intercuartil(df)
-            forest = DeteccionAtipicos.por_isolation_forest(df)
+        # Mostrar resumen de limpieza en un panel expandible
+        with st.expander("Ver resumen de limpieza de datos"):
+            st.markdown(f"""
+            - Columnas eliminadas por alto porcentaje de nulos: **{resumen_limpieza['columnas_eliminadas_por_nulos']}**
+            - Registros duplicados eliminados: **{resumen_limpieza['duplicados_eliminados']}**
+            - Celdas con valores nulos que fueron rellenadas: **{resumen_limpieza['nulos_rellenados']}**
+            """)
 
-            clusters = Agrupamiento.por_kmeans(df, num_clusters=3)
-            df["Cluster"] = clusters
-            st.subheader("🧩 Clusters detectados")
-            st.bar_chart(clusters.value_counts())
+        st.divider()
 
-            resumen = (
-                GeneradorResumen.resumen_agrupamiento(clusters) + "\n" +
-                GeneradorResumen.resumen_atipicos(df, zscore, iqr, forest) + "\n" +
-                GeneradorResumen.resumen_correlaciones(correlaciones)
-            ).replace("🔹", "-").replace("≥", ">=")
+        # Selector de acción
+        opcion = st.radio("¿Qué deseas hacer?", ["Dashboard Interactivo", "Análisis Completo"])
 
-            st.subheader("📋 Resumen generado")
-            st.text_area("Resumen", resumen, height=300)
+        if opcion == "Dashboard Interactivo":
+            mostrar_dashboard(df)
 
-            CrearGraficos(df)
-
-            exportador = ExportadorPDF("output")
-            exportador.agregar_titulo("Informe de Análisis Automatizado")
-            exportador.agregar_parrafo(resumen)
-            exportador.agregar_imagenes()
-            exportador.guardar_pdf("informe_final.pdf")
-
-            with open("output/informe_final.pdf", "rb") as file:
-                st.download_button("📄 Descargar informe PDF", file, file_name="informe_final.pdf")
+        elif opcion == "Análisis Completo":
+            ejecutar_analisis_completo(df)
 
     except Exception as e:
-        st.error(f"❌ Error al procesar los datos: {e}")
+        st.error(f"Error al procesar los datos: {e}")

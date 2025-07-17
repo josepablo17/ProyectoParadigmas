@@ -7,12 +7,13 @@ class GeneradorResumen:
     """
 
     @staticmethod
-    def resumen_agrupamiento(clusters: pd.Series) -> str:
+    def resumen_agrupamiento(clusters: pd.Series, etiquetas: dict = None) -> str:
         """
         Genera un resumen textual a partir de los resultados del clustering.
 
-        Parámetro:
+        Parámetros:
         - clusters: Serie con los valores de cluster asignados a cada fila
+        - etiquetas: diccionario opcional con etiquetas descriptivas por grupo
 
         Retorna:
         - Cadena de texto que describe la cantidad de grupos encontrados y su tamaño
@@ -22,9 +23,10 @@ class GeneradorResumen:
 
         resumen = f"🔹 Se identificaron {num_clusters} grupos principales mediante K-Means:\n"
         for grupo, cantidad in conteo.items():
-            resumen += f"  - Grupo {grupo}: {cantidad} registros\n"
+            nombre_grupo = etiquetas.get(grupo, f"Grupo {grupo}") if etiquetas else f"Grupo {grupo}"
+            resumen += f"  - {nombre_grupo}: {cantidad} registros\n"
+            return resumen
 
-        return resumen
 
     @staticmethod
     def resumen_atipicos(df: pd.DataFrame, zscore: pd.DataFrame, iqr: pd.DataFrame, forest: pd.Series) -> str:
