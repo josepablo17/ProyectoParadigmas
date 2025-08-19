@@ -36,7 +36,7 @@ if archivo:
         with st.expander("Vista previa del archivo cargado"):
             st.dataframe(df.head())
 
-        # Limpieza de datos con animación de carga
+        # Limpieza de datos
         with st.spinner("Limpiando y preparando datos..."):
             df, resumen_limpieza = preparar_datos(df)
 

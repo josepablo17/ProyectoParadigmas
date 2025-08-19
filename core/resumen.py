@@ -1,80 +1,130 @@
+# core/resumen.py
+from __future__ import annotations
 import pandas as pd
+import numpy as np
+from typing import Dict, Iterable
 
 class GeneradorResumen:
-    """
-    Clase que genera resúmenes en texto natural a partir de los resultados
-    de agrupamientos, detección de atípicos y análisis de correlación.
-    """
+    @staticmethod
+    def _fmt_pct(x: float, decimals: int = 1) -> str:
+        try:
+            return f"{100 * float(x):.{decimals}f}%"
+        except Exception:
+            return "—"
 
     @staticmethod
-    def resumen_agrupamiento(clusters: pd.Series, etiquetas: dict = None) -> str:
-        """
-        Genera un resumen textual a partir de los resultados del clustering.
-
-        Parámetros:
-        - clusters: Serie con los valores de cluster asignados a cada fila
-        - etiquetas: diccionario opcional con etiquetas descriptivas por grupo
-
-        Retorna:
-        - Cadena de texto que describe la cantidad de grupos encontrados y su tamaño
-        """
-        num_clusters = clusters.nunique()
-        conteo = clusters.value_counts().sort_index()
-
-        resumen = f"🔹 Se identificaron {num_clusters} grupos principales mediante K-Means:\n"
-        for grupo, cantidad in conteo.items():
-            nombre_grupo = etiquetas.get(grupo, f"Grupo {grupo}") if etiquetas else f"Grupo {grupo}"
-            resumen += f"  - {nombre_grupo}: {cantidad} registros\n"
-            return resumen
-
+    def _fmt_num(x, decimals: int = 2) -> str:
+        try:
+            xf = float(x)
+            if abs(xf) >= 1000:
+                return f"{xf:,.{decimals}f}"
+            return f"{xf:.{decimals}f}"
+        except Exception:
+            return "—"
 
     @staticmethod
-    def resumen_atipicos(df: pd.DataFrame, zscore: pd.DataFrame, iqr: pd.DataFrame, forest: pd.Series) -> str:
+    def resumen_agrupamiento(clusters: Iterable, etiquetas: Dict) -> str:
         """
-        Resume la cantidad de valores atípicos encontrados por cada método.
-
-        Parámetros:
-        - df: DataFrame original (no se usa directamente, pero se mantiene para consistencia)
-        - zscore: DataFrame booleano con outliers detectados por Z-score
-        - iqr: DataFrame booleano con outliers detectados por IQR
-        - forest: Serie booleana con registros anómalos detectados por Isolation Forest
-
-        Retorna:
-        - Cadena de texto con los totales de valores atípicos encontrados
+        clusters: array-like de asignaciones (int), puede contener -1 (sin cluster)
+        etiquetas: dict {cluster_id: 'nombre legible'}
         """
-        resumen = "🔹 Detección de valores atípicos:\n"
-        resumen += f"  - Por Z-score: {int(zscore.sum().sum())} valores atípicos\n"
-        resumen += f"  - Por IQR: {int(iqr.sum().sum())} valores atípicos\n"
-        resumen += f"  - Por Isolation Forest: {forest.sum()} registros marcados como anómalos\n"
+        if clusters is None:
+            return "• No se realizó agrupamiento."
 
-        return resumen
+        s = pd.Series(clusters)
+        if s.empty:
+            return "• No se realizó agrupamiento."
+
+        total = len(s)
+        conteo = s.value_counts(dropna=False).sort_index()
+        partes = ["Agrupamiento (K-Means):"]
+
+        for cid, cnt in conteo.items():
+            etiqueta = etiquetas.get(cid, f"Cluster {cid}")
+            partes.append(f"- {etiqueta}: {cnt} ({GeneradorResumen._fmt_pct(cnt/total)})")
+
+        # pequeña pista de calidad (opcional si luego calculas silhouette aparte)
+        if (-1 in conteo.index) and (conteo[-1] > 0):
+            partes.append("- Nota: hay filas sin cluster asignado (−1).")
+
+        return "\n".join(partes)
 
     @staticmethod
-    def resumen_correlaciones(correlaciones: pd.DataFrame, umbral: float = 0.8) -> str:
+    def resumen_atipicos(
+        df: pd.DataFrame,
+        zscore_flags: pd.DataFrame | None,
+        iqr_flags: pd.DataFrame | None,
+        forest_flags: pd.Series | None,
+        top_n: int = 5,
+    ) -> str:
         """
-        Genera un resumen textual con las correlaciones fuertes detectadas entre variables.
-
-        Parámetros:
-        - correlaciones: matriz de correlación
-        - umbral: valor mínimo absoluto para considerar una correlación como fuerte
-
-        Retorna:
-        - Cadena de texto con las correlaciones que superan el umbral
+        zscore_flags / iqr_flags: DataFrames booleanos por columna (True=outlier)
+        forest_flags: Serie booleana por fila (True=registro atípico)
         """
-        resumen = f"🔹 Correlaciones fuertes detectadas (|r| ≥ {umbral:.2f}):\n"
-        contador = 0
+        partes = ["Valores atípicos:"]
 
-        for i in range(len(correlaciones.columns)):
-            for j in range(i + 1, len(correlaciones.columns)):
-                col1 = correlaciones.columns[i]
-                col2 = correlaciones.columns[j]
-                coef = correlaciones.iloc[i, j]
+        # Z-score
+        if isinstance(zscore_flags, pd.DataFrame) and not zscore_flags.empty:
+            rates = zscore_flags.mean(numeric_only=True).sort_values(ascending=False)
+            top = rates.head(top_n)
+            if not top.empty:
+                partes.append("- Z-score (por columna):")
+                for col, rate in top.items():
+                    partes.append(f"  • {col}: {GeneradorResumen._fmt_pct(rate)}")
+        else:
+            partes.append("- Z-score: no aplicable o sin columnas numéricas.")
 
-                if abs(coef) >= umbral:
-                    resumen += f"  - {col1} vs {col2}: r = {coef:.2f}\n"
-                    contador += 1
+        # IQR
+        if isinstance(iqr_flags, pd.DataFrame) and not iqr_flags.empty:
+            rates = iqr_flags.mean(numeric_only=True).sort_values(ascending=False)
+            top = rates.head(top_n)
+            if not top.empty:
+                partes.append("- IQR (por columna):")
+                for col, rate in top.items():
+                    partes.append(f"  • {col}: {GeneradorResumen._fmt_pct(rate)}")
+        else:
+            partes.append("- IQR: no aplicable o sin columnas numéricas.")
 
-        if contador == 0:
-            resumen += "  - No se encontraron correlaciones fuertes.\n"
+        # Isolation Forest
+        if isinstance(forest_flags, pd.Series) and not forest_flags.empty:
+            rate = float(forest_flags.mean())
+            partes.append(f"- Isolation Forest (por fila): {GeneradorResumen._fmt_pct(rate)} de registros atípicos.")
+        else:
+            partes.append("- Isolation Forest: no aplicable.")
 
-        return resumen
+        return "\n".join(partes)
+
+    @staticmethod
+    def resumen_correlaciones(corr_df: pd.DataFrame | None, top_n: int = 5) -> str:
+        """
+        corr_df: matriz de correlación (num_cols x num_cols).
+        Reporta top-N correlaciones absolutas (excluyendo diagonal y duplicados).
+        """
+        if corr_df is None or corr_df.empty or corr_df.shape[0] < 2:
+            return "Correlaciones: no hay suficientes variables numéricas para evaluar."
+
+        # Convertir a formato largo y quitar duplicados (i<j)
+        c = corr_df.copy()
+        np.fill_diagonal(c.values, np.nan)
+        long = (
+            c.abs()
+             .stack()
+             .reset_index()
+             .rename(columns={"level_0": "var1", "level_1": "var2", 0: "abs_corr"})
+        )
+
+        # Mantener sólo pares únicos (var1 < var2 en orden)
+        mask = long["var1"] < long["var2"]
+        long = long[mask]
+
+        top = long.sort_values("abs_corr", ascending=False).head(top_n)
+
+        if top.empty:
+            return "Correlaciones: sin relaciones destacadas."
+
+        partes = ["Correlaciones destacadas (|r|):"]
+        for _, row in top.iterrows():
+            v1, v2, r = row["var1"], row["var2"], row["abs_corr"]
+            partes.append(f"- {v1} ↔ {v2}: {GeneradorResumen._fmt_num(r, 3)}")
+
+        return "\n".join(partes)
